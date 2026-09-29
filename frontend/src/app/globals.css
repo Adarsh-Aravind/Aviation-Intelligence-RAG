@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+/* Aviation Intelligence — "glass cockpit" palette */
+:root {
+  --bg: #060a13;
+  --surface: #0b1220;
+  --surface-2: #101a2d;
+  --surface-3: #16223a;
+  --border: #1d2a44;
+  --border-strong: #2a3a5c;
+  --text: #e6edf7;
+  --muted: #8b9ab3;
+  --subtle: #5b6b88;
+  --accent: #38bdf8;
+  --accent-strong: #0ea5e9;
+  --accent-soft: rgba(56, 189, 248, 0.12);
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #fb7185;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Subtle navigation-chart grid behind the app */
+.bg-grid {
+  background-image:
+    linear-gradient(to right, rgba(56, 189, 248, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(56, 189, 248, 0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse at top, black 30%, transparent 75%);
+}
+
+.glow {
+  box-shadow:
+    0 0 0 1px rgba(56, 189, 248, 0.25),
+    0 8px 30px -8px rgba(14, 165, 233, 0.35);
+}
+
+/* Markdown answers */
+.prose-answer {
+  line-height: 1.7;
+  font-size: 0.95rem;
+}
+.prose-answer p {
+  margin: 0.6em 0;
+}
+.prose-answer ul,
+.prose-answer ol {
+  margin: 0.6em 0;
+  padding-left: 1.3em;
+}
+.prose-answer ul {
+  list-style: disc;
+}
+.prose-answer ol {
+  list-style: decimal;
+}
+.prose-answer li {
+  margin: 0.25em 0;
+}
+.prose-answer strong {
+  color: #fff;
+  font-weight: 600;
+}
+.prose-answer h1,
+.prose-answer h2,
+.prose-answer h3 {
+  font-weight: 600;
+  margin: 1em 0 0.4em;
+  color: #fff;
+}
+.prose-answer code {
+  font-family: var(--font-jetbrains);
+  font-size: 0.85em;
+  background: var(--surface-3);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.prose-answer table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: 0.875rem;
+}
+.prose-answer th,
+.prose-answer td {
+  border: 1px solid var(--border);
+  padding: 0.4em 0.6em;
+  text-align: left;
+}
+
+@keyframes radar {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.animate-radar {
+  animation: radar 2.4s linear infinite;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--surface-3);
+  border-radius: 8px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

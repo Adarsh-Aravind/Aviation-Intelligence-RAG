@@ -1,0 +1,13 @@
+# This project's own Cloudflare Tunnel (runs under PM2 as "aviation-rag-tunnel").
+# It is separate from any other tunnel on the host, so no sudo or system config is touched.
+# Setup (see README → Deployment):
+#   cloudflared tunnel create --credentials-file deploy/cloudflared/credentials.json aviation-rag
+#   cloudflared tunnel route dns aviation-rag rag-api.<your-domain>
+#   cp deploy/cloudflared/config.example.yml deploy/cloudflared/config.yml   # then edit the values below
+tunnel: <TUNNEL-UUID>
+credentials-file: /home/<user>/aviation-intelligence-rag/deploy/cloudflared/credentials.json
+
+ingress:
+  - hostname: rag-api.<your-domain>
+    service: http://127.0.0.1:8100
+  - service: http_status:404

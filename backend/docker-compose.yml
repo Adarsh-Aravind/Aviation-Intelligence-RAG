@@ -1,0 +1,39 @@
+# Production stack for the 4 GB server:  docker compose up -d --build
+# The API is NOT published on any host port — only cloudflared can reach it on the internal network.
+
+services:
+  api:
+    build: .
+    image: aviation-rag-api:latest
+    env_file: .env
+    environment:
+      ENVIRONMENT: production
+      EMBEDDING_CACHE_DIR: /models
+    expose:
+      - "8000"
+    restart: unless-stopped
+    mem_limit: 1536m
+    cpus: 2
+    tmpfs:
+      - /tmp:size=128m # PDFs are streamed here during processing
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 128m
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
