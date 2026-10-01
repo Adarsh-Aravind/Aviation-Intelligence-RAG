@@ -15,7 +15,7 @@ Try asking:
 | Frontend | Next.js 16 (App Router), TypeScript, Tailwind CSS 4 | Vercel |
 | API | FastAPI, Python 3.12, psycopg 3 | Your 4 GB Linux server |
 | Embeddings | `BAAI/bge-small-en-v1.5` via fastembed (ONNX, CPU) | Same server, ~250–400 MB RAM |
-| Vector DB | Supabase Postgres + pgvector (HNSW, cosine) | Supabase |
+| Retrieval | Hybrid: pgvector (HNSW, cosine) + Postgres full-text search, fused with RRF | Supabase |
 | File storage | Supabase Storage (private bucket) | Supabase |
 | LLM | Groq (`openai/gpt-oss-120b` by default) | Groq API |
 | Process manager | PM2 (or Docker, optional) | Your server |
@@ -48,7 +48,11 @@ Browser ──► Next.js on Vercel ── /api/proxy/* (server-side, allowliste
 4. The status moves `queued → processing → ready | failed`. The UI polls it. After a restart, interrupted documents are re-queued automatically.
 
 ### Answering (grounding guarantees)
-1. The question is embedded (with the bge query instruction prefix). The top 20 chunks come from pgvector, only from `ready` documents.
+1. **Hybrid retrieval.** The question is embedded (with the bge query instruction prefix) and also turned into a keyword query.
+   - pgvector returns the top 20 chunks by cosine similarity.
+   - Postgres full-text search returns the top 20 by keyword match: passages containing *all* terms first, then *any* term. Postgres ranking has no IDF, so pure OR ranking lets common words drown out decisive ones.
+   - The two rankings are fused with **reciprocal rank fusion** (k = 60). Only `ready` documents are searched.
+   - Keyword matching rescues passages embeddings rank poorly. Example: the VFR-minimums *table* ranked #68 on OR keywords and outside the vector top 20 for "What are VFR minimums in Class C airspace?"; hybrid ranks it #1.
 2. **Relevance gate:** chunks below `MIN_RELEVANCE` (cosine) are dropped. If nothing is left, the API returns `insufficient_context` **without calling the LLM**.
 3. The LLM gets numbered sources and strict rules:
    - use only the sources;
@@ -308,7 +312,6 @@ If you prefer containers, `backend/Dockerfile` and `backend/docker-compose.yml` 
 | Everything answers "not enough information" | Lower `MIN_RELEVANCE`, e.g. to 0.40, and make sure documents are `ready`. |
 
 ## Roadmap
-- Hybrid retrieval: pgvector + Postgres full-text search fused with reciprocal rank fusion (`fts` column and GIN index already exist).
 - Streaming answers (SSE).
 - A lightweight cross-encoder reranker.
 - An evaluation set (question → expected document/page) with hit-rate and faithfulness metrics.

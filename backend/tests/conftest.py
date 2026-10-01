@@ -117,7 +117,7 @@ class FakeStore:
     def insert_chunks(self, doc_id, chunks, embeddings):
         self.chunks.setdefault(doc_id, []).extend(zip(chunks, embeddings, strict=True))
 
-    def search_chunks(self, embedding, limit):
+    def search_chunks(self, embedding, limit, query_text=None):
         results = []
         for doc_id, items in self.chunks.items():
             doc = self.docs.get(doc_id)
@@ -138,7 +138,25 @@ class FakeStore:
                     )
                 )
         results.sort(key=lambda r: r.score, reverse=True)
-        return results[:limit]
+        if not query_text:
+            return results[:limit]
+        # naive hybrid: reciprocal-rank fusion of cosine order and keyword-overlap order
+        terms = {t for t in re.findall(r"[a-z0-9]+", query_text.lower()) if len(t) > 2}
+        vec_rank = {r.chunk_id: i for i, r in enumerate(results[:limit], 1)}
+        overlap = sorted(
+            (r for r in results if terms & set(re.findall(r"[a-z0-9]+", r.content.lower()))),
+            key=lambda r: -len(terms & set(re.findall(r"[a-z0-9]+", r.content.lower()))),
+        )
+        kw_rank = {r.chunk_id: i for i, r in enumerate(overlap[:limit], 1)}
+        pool = {r.chunk_id: r for r in results if r.chunk_id in vec_rank or r.chunk_id in kw_rank}
+        for cid, r in pool.items():
+            r.match = (
+                "both"
+                if cid in vec_rank and cid in kw_rank
+                else ("keyword" if cid in kw_rank else "semantic")
+            )
+        rrf = lambda cid: sum(1 / (60 + rk[cid]) for rk in (vec_rank, kw_rank) if cid in rk)  # noqa: E731
+        return sorted(pool.values(), key=lambda r: rrf(r.chunk_id), reverse=True)[:limit]
 
 
 class FakeStorage:

@@ -114,3 +114,19 @@ def test_prompt_numbers_sources_with_pages():
     assert prompt.startswith("<sources>")
     assert "[1] PHAK (p. 12)" in prompt
     assert prompt.rstrip().endswith("Question: Q?")
+
+
+def test_keyword_queries_strip_search_operators():
+    from app.db.repository import _keyword_queries
+
+    all_q, any_q = _keyword_queries('VFR -minimums "Class C" OR (airspace) & !x')
+    assert all_q == "VFR minimums Class C OR airspace x"
+    assert any_q == "VFR or minimums or Class or C or OR or airspace or x"
+    assert _keyword_queries("¿¡") == ("", "")
+
+
+def test_hybrid_keeps_fused_order_and_cosine_gate():
+    rag, store, _ = _service(min_relevance=0.2)
+    chunks = rag.retriever.retrieve("density altitude temperature").chunks
+    assert chunks and all(c.score >= 0.2 for c in chunks)
+    assert {c.match for c in chunks} <= {"semantic", "keyword", "both"}

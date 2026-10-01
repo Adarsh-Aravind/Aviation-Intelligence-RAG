@@ -5,6 +5,7 @@ Services depend on the ``DocumentStore`` protocol so tests can swap in an in-mem
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from typing import Any, Protocol
 from uuid import UUID
@@ -45,7 +46,75 @@ class DocumentStore(Protocol):
     def insert_chunks(
         self, doc_id: UUID, chunks: Sequence[Chunk], embeddings: Sequence[Sequence[float]]
     ) -> None: ...
-    def search_chunks(self, embedding: Sequence[float], limit: int) -> list[RetrievedChunk]: ...
+    def search_chunks(
+        self, embedding: Sequence[float], limit: int, query_text: str | None = None
+    ) -> list[RetrievedChunk]: ...
+
+
+RRF_K = 60  # standard reciprocal-rank-fusion constant
+
+_VECTOR_SQL = """
+    select c.id, c.document_id, d.title, c.page_start, c.page_end, c.section, c.content,
+           1 - (c.embedding <=> %(vec)s::vector) as score, true as in_vec, false as in_kw
+    from chunks c
+    join documents d on d.id = c.document_id
+    where d.status = 'ready'
+    order by c.embedding <=> %(vec)s::vector
+    limit %(limit)s
+"""
+
+_HYBRID_SQL = """
+    with q as (
+        select websearch_to_tsquery('english', %(kw_all)s) as all_q,
+               websearch_to_tsquery('english', %(kw_any)s) as any_q
+    ),
+    vec as (
+        select id, row_number() over (order by dist) as r
+        from (
+            select c.id, c.embedding <=> %(vec)s::vector as dist
+            from chunks c join documents d on d.id = c.document_id
+            where d.status = 'ready'
+            order by dist
+            limit %(k)s
+        ) v
+    ),
+    kw as (
+        select id, row_number() over (order by has_all desc, rank desc) as r
+        from (
+            -- passages containing ALL query terms first, then ANY term (Postgres FTS has no IDF,
+            -- so plain OR ranking lets common words like "airspace" drown out decisive ones)
+            select c.id, (c.fts @@ q.all_q) as has_all, ts_rank_cd(c.fts, q.any_q, 32) as rank
+            from chunks c join documents d on d.id = c.document_id, q
+            where d.status = 'ready' and c.fts @@ q.any_q
+            order by has_all desc, rank desc
+            limit %(k)s
+        ) k
+    ),
+    fused as (
+        select id, sum(1.0 / (%(rrf_k)s + r)) as rrf,
+               bool_or(src = 'v') as in_vec, bool_or(src = 'k') as in_kw
+        from (
+            select id, r, 'v' as src from vec
+            union all
+            select id, r, 'k' as src from kw
+        ) u
+        group by id
+    )
+    select c.id, c.document_id, d.title, c.page_start, c.page_end, c.section, c.content,
+           1 - (c.embedding <=> %(vec)s::vector) as score, f.in_vec, f.in_kw
+    from fused f
+    join chunks c on c.id = f.id
+    join documents d on d.id = c.document_id
+    order by f.rrf desc
+    limit %(limit)s
+"""
+
+
+def _keyword_queries(text: str) -> tuple[str, str]:
+    """(all-terms, any-term) queries for websearch_to_tsquery, built from plain words only so user
+    input can never inject search operators. Postgres drops English stop words itself."""
+    words = re.findall(r"[A-Za-z0-9]+", text)[:32]
+    return " ".join(words), " or ".join(words)
 
 
 _UPDATABLE = {"status", "error_message", "page_count", "chunk_count", "processed_at", "file_size"}
@@ -182,21 +251,33 @@ class PgDocumentStore:
                 rows,
             )
 
-    def search_chunks(self, embedding: Sequence[float], limit: int) -> list[RetrievedChunk]:
+    def search_chunks(
+        self, embedding: Sequence[float], limit: int, query_text: str | None = None
+    ) -> list[RetrievedChunk]:
+        """Vector search, or hybrid search when ``query_text`` is given: pgvector cosine ranking and
+        Postgres full-text ranking (ts_rank_cd, BM25-like) fused with reciprocal rank fusion.
+
+        Keyword matching rescues passages that embeddings rank poorly, e.g. dense tables of
+        regulatory minimums. ``score`` is always the cosine similarity, so the relevance gate
+        upstream keeps working on the same scale.
+        """
         vec = vector_literal(embedding)
+        kw_all, kw_any = _keyword_queries(query_text) if query_text else ("", "")
         with self.pool.connection() as conn:
-            rows = conn.execute(
-                """
-                select c.id, c.document_id, d.title, c.page_start, c.page_end, c.section,
-                       c.content, 1 - (c.embedding <=> %(vec)s::vector) as score
-                from chunks c
-                join documents d on d.id = c.document_id
-                where d.status = 'ready'
-                order by c.embedding <=> %(vec)s::vector
-                limit %(limit)s
-                """,
-                {"vec": vec, "limit": limit},
-            ).fetchall()
+            if not kw_any:
+                rows = conn.execute(_VECTOR_SQL, {"vec": vec, "limit": limit}).fetchall()
+            else:
+                rows = conn.execute(
+                    _HYBRID_SQL,
+                    {
+                        "vec": vec,
+                        "kw_all": kw_all,
+                        "kw_any": kw_any,
+                        "k": limit,
+                        "rrf_k": RRF_K,
+                        "limit": limit,
+                    },
+                ).fetchall()
         return [
             RetrievedChunk(
                 chunk_id=r["id"],
@@ -207,6 +288,7 @@ class PgDocumentStore:
                 section=r["section"],
                 content=r["content"],
                 score=float(r["score"]),
+                match="both" if r["in_vec"] and r["in_kw"] else ("keyword" if r["in_kw"] else "semantic"),
             )
             for r in rows
         ]

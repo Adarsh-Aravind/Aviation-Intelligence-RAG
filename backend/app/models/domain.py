@@ -33,4 +33,5 @@ class RetrievedChunk:
     page_end: int
     section: str | None
     content: str
-    score: float
+    score: float  # cosine similarity to the question (drives the relevance gate)
+    match: str = "semantic"  # "semantic", "keyword" or "both" (hybrid retrieval)

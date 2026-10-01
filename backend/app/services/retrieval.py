@@ -1,4 +1,4 @@
-"""Semantic retrieval over pgvector."""
+"""Hybrid retrieval: pgvector semantic search + Postgres full-text search, fused with RRF."""
 
 from __future__ import annotations
 
@@ -27,25 +27,30 @@ class Retriever:
         candidates: int = 20,
         top_k: int = 6,
         min_relevance: float = 0.55,
+        hybrid: bool = True,
     ):
         self.store = store
         self.embedder = embedder
         self.candidates = candidates
         self.top_k = top_k
         self.min_relevance = min_relevance
+        self.hybrid = hybrid
 
     def retrieve(self, question: str) -> RetrievalResult:
         t0 = time.perf_counter()
         query_vec = self.embedder.embed_query(question)
         t1 = time.perf_counter()
-        candidates = self.store.search_chunks(query_vec, limit=self.candidates)
+        candidates = self.store.search_chunks(
+            query_vec, limit=self.candidates, query_text=question if self.hybrid else None
+        )
         t2 = time.perf_counter()
 
+        # Keep the store's order (fused for hybrid, cosine otherwise). The relevance gate stays on
+        # cosine similarity, so keyword-only matches cannot pull in off-topic passages.
         relevant = [c for c in candidates if c.score >= self.min_relevance]
-        relevant.sort(key=lambda c: c.score, reverse=True)
         return RetrievalResult(
             chunks=_dedupe(relevant)[: self.top_k],
-            best_score=candidates[0].score if candidates else None,
+            best_score=max((c.score for c in candidates), default=None),
             embedding_ms=(t1 - t0) * 1000,
             retrieval_ms=(t2 - t1) * 1000,
             candidates=candidates,
