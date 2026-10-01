@@ -176,8 +176,10 @@ class FakeLLM:
         self.calls: list[tuple[str, str]] = []
 
     def complete(self, system, user):
+        from app.services.llm import LLMResult
+
         self.calls.append((system, user))
-        return self.reply
+        return LLMResult(self.reply, self.model)
 
 
 # ------------------------------------------------------------------------- fixtures

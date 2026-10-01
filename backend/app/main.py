@@ -65,6 +65,7 @@ def build_container(settings: Settings) -> Container:
             max_tokens=settings.llm_max_tokens,
             timeout=settings.llm_timeout_s,
             reasoning_effort=settings.llm_reasoning_effort,
+            fallback_models=settings.groq_fallback_models,
         )
         if settings.llm_configured
         else None

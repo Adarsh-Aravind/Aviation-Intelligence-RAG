@@ -128,7 +128,8 @@ class RagService:
             raise LLMError("The language model is not configured (GROQ_API_KEY missing).")
 
         t_llm = time.perf_counter()
-        raw = self.llm.complete(SYSTEM_PROMPT, build_user_prompt(question, result.chunks))
+        llm_result = self.llm.complete(SYSTEM_PROMPT, build_user_prompt(question, result.chunks))
+        raw = llm_result.text
         timings.llm_ms = round((time.perf_counter() - t_llm) * 1000, 1)
         sources = [_source(n, c) for n, c in enumerate(result.chunks, start=1)]
 
@@ -141,7 +142,7 @@ class RagService:
                 citations=[],
                 retrieved=sources,
                 timings=timings,
-                model=self.llm.model,
+                model=llm_result.model,
             )
 
         answer, cited = extract_citations(raw.replace(INSUFFICIENT_SENTINEL, "").strip(), len(sources))
@@ -156,5 +157,5 @@ class RagService:
             citations=citations,
             retrieved=retrieved,
             timings=timings,
-            model=self.llm.model,
+            model=llm_result.model,
         )

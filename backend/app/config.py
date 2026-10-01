@@ -48,11 +48,13 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.1
     llm_max_tokens: int = 2048  # includes reasoning tokens for reasoning models
     llm_reasoning_effort: str = "low"  # for reasoning models (gpt-oss); set empty for others
+    # Tried in order when the primary model is rate-limited (each Groq model has its own free quota).
+    groq_fallback_models: list[str] = Field(default_factory=lambda: ["openai/gpt-oss-20b"])
     llm_timeout_s: float = 60.0
 
     # --- Retrieval ---
     retrieval_candidates: int = 20
-    retrieval_top_k: int = 6
+    retrieval_top_k: int = 5  # passages sent to the LLM (fewer tokens = more answers within Groq limits)
     min_relevance: float = 0.45
 
     # --- Chunking ---
