@@ -1,4 +1,9 @@
-"""PDF validation and page-wise text extraction (pypdf — pure Python, low memory)."""
+"""PDF validation and page-wise text extraction.
+
+Uses PDFium (via pypdfium2) — Chrome's PDF engine. On the FAA PHAK, pypdf needed 26 s and ~1.2 GB
+for a single vector-heavy page; PDFium extracts the whole 30-page chapter in ~1 s under ~250 MB,
+which matters on a 4 GB host.
+"""
 
 from __future__ import annotations
 
@@ -9,8 +14,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-from pypdf import PdfReader
-from pypdf.errors import PdfReadError
+import pypdfium2 as pdfium
 
 from app.models.domain import PageText
 
@@ -88,41 +92,41 @@ def extract_pdf(path: Path, max_pages: int) -> ExtractedPdf:
     if not has_pdf_magic(path):
         raise PdfValidationError("File is not a valid PDF.")
     try:
-        reader = PdfReader(str(path), strict=False)
-        if reader.is_encrypted:
-            try:
-                if not reader.decrypt(""):
-                    raise PdfValidationError("PDF is password-protected.")
-            except PdfValidationError:
-                raise
-            except Exception as exc:
-                raise PdfValidationError("PDF is encrypted and cannot be read.") from exc
-        page_count = len(reader.pages)
-    except PdfValidationError:
-        raise
-    except (PdfReadError, Exception) as exc:  # pypdf raises a variety of errors on corrupt files
-        raise PdfValidationError(f"Could not read PDF: {exc.__class__.__name__}") from exc
+        doc = pdfium.PdfDocument(str(path))
+    except pdfium.PdfiumError as exc:
+        if "password" in str(exc).lower():
+            raise PdfValidationError("PDF is password-protected.") from exc
+        raise PdfValidationError(f"Could not read PDF: {exc}") from exc
 
-    if page_count == 0:
-        raise PdfValidationError("PDF has no pages.")
-    if page_count > max_pages:
-        raise PdfValidationError(f"PDF has {page_count} pages; the limit is {max_pages}.")
-
-    title = None
     try:
-        if reader.metadata and reader.metadata.title:
-            title = str(reader.metadata.title).strip() or None
-    except Exception:  # noqa: S110 — malformed metadata is common and non-fatal
-        pass
+        page_count = len(doc)
+        if page_count == 0:
+            raise PdfValidationError("PDF has no pages.")
+        if page_count > max_pages:
+            raise PdfValidationError(f"PDF has {page_count} pages; the limit is {max_pages}.")
 
-    pages: list[PageText] = []
-    for i, page in enumerate(reader.pages, start=1):
+        title = None
         try:
-            raw = page.extract_text() or ""
-        except Exception:
-            logger.warning("failed to extract page %s", i)
+            title = (doc.get_metadata_dict().get("Title") or "").strip() or None
+        except Exception:  # noqa: S110 — malformed metadata is common and non-fatal
+            pass
+
+        pages: list[PageText] = []
+        for i in range(page_count):
             raw = ""
-        pages.append(PageText(i, clean_text(raw)))
+            try:
+                page = doc[i]
+                textpage = page.get_textpage()
+                try:
+                    raw = textpage.get_text_range() or ""
+                finally:
+                    textpage.close()
+                    page.close()
+            except Exception:
+                logger.warning("failed to extract page %s", i + 1)
+            pages.append(PageText(i + 1, clean_text(raw)))
+    finally:
+        doc.close()
 
     pages = strip_repeated_headers_footers(pages)
     total_chars = sum(len(p.text) for p in pages)
