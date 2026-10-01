@@ -2,6 +2,14 @@
 
 A full-stack **retrieval-augmented generation** app for aviation documents. Upload manuals, handbooks and regulations as PDFs, then ask questions. Answers are generated **only** from retrieved passages and cite the **document, page and section** each claim came from. When the library doesn't cover a question, the app says so instead of guessing.
 
+**Live demo:** [aviation-intelligence-rag.vercel.app](https://aviation-intelligence-rag.vercel.app). The library holds the FAA *Pilot's Handbook of Aeronautical Knowledge* (FAA-H-8083-25C), and the API is served from a self-hosted home server through Cloudflare Tunnel.
+
+Try asking:
+- *"How does high density altitude affect takeoff performance?"*
+- *"What are the VFR weather minimums in Class C airspace?"*
+- *"What is the first indication of carburetor ice?"*
+- *"Who won the 2022 World Cup?"* (the app should say the library doesn't cover it)
+
 | Layer | Tech | Runs on |
 |---|---|---|
 | Frontend | Next.js 16 (App Router), TypeScript, Tailwind CSS 4 | Vercel |

@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     environment: str = "development"
     log_level: str = "INFO"
+    log_file: str | None = None  # e.g. logs/app.log -> rotating file (5 MB x 3) instead of stdout
 
     # --- Auth between the Next.js proxy and this API ---
     backend_api_key: str = Field(default="", description="Required on every request except /api/health")
@@ -65,7 +66,7 @@ class Settings(BaseSettings):
     # --- Rate limits (slowapi syntax) ---
     chat_rate_limit: str = "10/minute;200/day"
 
-    @field_validator("embedding_cache_dir")
+    @field_validator("embedding_cache_dir", "log_file")
     @classmethod
     def resolve_cache_dir(cls, v: str | None) -> str | None:
         # Relative paths are relative to the backend folder, not the process working directory.

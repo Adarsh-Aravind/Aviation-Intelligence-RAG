@@ -26,15 +26,18 @@ module.exports = {
       script: ".venv/bin/uvicorn",
       // ONE worker on purpose: each worker would load its own copy of the embedding model.
       // The embedding model is loaded inside this process at startup (from the local cache).
-      args: `app.main:app --host 127.0.0.1 --port ${PORT} --workers 1 --no-server-header`,
+      args: `app.main:app --host 127.0.0.1 --port ${PORT} --workers 1 --no-server-header --no-access-log`,
       interpreter: "none",
       env: {
         ENVIRONMENT: "production",
         PYTHONUNBUFFERED: "1",
+        LOG_FILE: "logs/app.log", // app logs rotate in-process (5 MB x 3) — PM2 never trims its own files
+        MALLOC_ARENA_MAX: "2", // limit glibc per-thread arenas (fragmentation) on Linux
       },
       ...resilient,
       max_memory_restart: "1200M", // normal usage is ~0.4 GB; restart if something leaks
       kill_timeout: 10000, // let the ingestion worker finish its current batch
+      // Only uvicorn startup lines and crash tracebacks land here (app logs go to logs/app.log).
       out_file: "logs/api.out.log",
       error_file: "logs/api.err.log",
     },
@@ -42,7 +45,7 @@ module.exports = {
       name: "aviation-rag-tunnel",
       cwd: __dirname,
       script: "cloudflared",
-      args: "tunnel --no-autoupdate --config ../deploy/cloudflared/config.yml run",
+      args: "tunnel --no-autoupdate --loglevel warn --config ../deploy/cloudflared/config.yml run",
       interpreter: "none",
       ...resilient,
       max_memory_restart: "200M",

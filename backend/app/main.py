@@ -166,7 +166,7 @@ def _startup(container: Container) -> threading.Event:
 
 def create_app(container: Container | None = None) -> FastAPI:
     settings = container.settings if container else get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, settings.log_file)
     managed = container is None
 
     @asynccontextmanager

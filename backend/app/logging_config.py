@@ -6,6 +6,8 @@ import sys
 import time
 import uuid
 from contextvars import ContextVar
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -30,8 +32,16 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, default=str)
 
 
-def configure_logging(level: str = "INFO") -> None:
-    handler = logging.StreamHandler(sys.stdout)
+def configure_logging(level: str = "INFO", log_file: str | None = None) -> None:
+    """Log JSON to stdout, or — when ``log_file`` is set — to a size-capped rotating file
+    (5 MB x 3 backups), so logs can never fill the disk of a long-running home server."""
+    if log_file:
+        Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+        handler: logging.Handler = RotatingFileHandler(
+            log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+        )
+    else:
+        handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter())
     root = logging.getLogger()
     root.handlers[:] = [handler]

@@ -52,7 +52,12 @@ class FastEmbedEmbedder:
 
         start = time.perf_counter()
         self._model = TextEmbedding(
-            model_name=self.model_name, cache_dir=self.cache_dir, threads=self.threads
+            model_name=self.model_name,
+            cache_dir=self.cache_dir,
+            threads=self.threads,
+            # ONNX Runtime's arena keeps peak memory forever; without it steady-state RSS roughly
+            # halves (measured 443 MB -> 219 MB) at a negligible speed cost.
+            enable_cpu_mem_arena=False,
         )
         probe = next(iter(self._model.embed(["warmup"])))
         if len(probe) != self.dim:
