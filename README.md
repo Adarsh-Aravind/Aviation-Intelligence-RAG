@@ -71,6 +71,14 @@ Browser ──► Next.js on Vercel ── /api/proxy/* (server-side, allowliste
 - **Tables use RLS with no policies**, so the public anon key can read nothing. The storage bucket is private.
 - **The API listens on `127.0.0.1` only** (PM2) or on no host port (Docker). Only `cloudflared` reaches it.
 
+### Live flight background
+Behind every page, a faint canvas shows up to 30 real flights currently around India. Each one is drawn as its origin → destination great-circle route, with a small plane icon labelled with its airport codes (e.g. `DEL → BOM`). There's no map; it's decorative and kept deliberately dim.
+
+- **Data:** the backend polls [OpenSky Network](https://opensky-network.org) for positions, and [adsbdb](https://www.adsbdb.com) for each callsign's route (cached for 12 hours). Routes the aircraft isn't actually flying along are discarded. Everything is held in memory; nothing is stored.
+- **Only on demand:** the poller runs only while someone has opened the site in the last 10 minutes, so an idle server makes no outbound calls.
+- **Refresh rate:** about every 15 minutes anonymously. For about every 2 minutes, set `OPENSKY_CLIENT_ID` / `OPENSKY_CLIENT_SECRET` from a free OpenSky account's API client. Between refreshes, the browser moves each plane along its route at its reported speed.
+- **Turn it off** with `FLIGHTS_ENABLED=false`. If the server is offline, the background simply doesn't draw.
+
 ---
 
 ## Repository layout
@@ -293,6 +301,7 @@ If you prefer containers, `backend/Dockerfile` and `backend/docker-compose.yml` 
 |---|---|---|---|
 | GET | `/api/health` | public | DB, embedder, LLM and storage status |
 | GET | `/api/stats` | key | document/page/chunk counts |
+| GET | `/api/flights` | key | live flights around India with origin/destination (background layer) |
 | GET | `/api/documents` · `/api/documents/{id}` | key | library |
 | GET | `/api/documents/{id}/file-url` | key | 10-minute signed PDF URL |
 | POST | `/api/documents/init` | admin | validate + dedupe, returns a signed upload URL |

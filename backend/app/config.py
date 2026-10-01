@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     # --- Rate limits (slowapi syntax) ---
     chat_rate_limit: str = "10/minute;200/day"
 
+    # --- Live flight background (OpenSky + adsbdb) ---
+    flights_enabled: bool = True
+    flights_max: int = 30
+    opensky_client_id: str = ""  # optional: refresh every ~2 min instead of ~15 min
+    opensky_client_secret: str = ""
+
     @field_validator("embedding_cache_dir", "log_file")
     @classmethod
     def resolve_cache_dir(cls, v: str | None) -> str | None:

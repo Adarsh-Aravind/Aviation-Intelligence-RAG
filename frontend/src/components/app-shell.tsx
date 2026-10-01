@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { FlightBackground } from "@/components/flight-background";
 import { Logo } from "@/components/logo";
 import { ServerStatusBanner } from "@/components/server-status-banner";
 import { useSession } from "@/components/session-provider";
@@ -78,6 +79,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative flex h-dvh overflow-hidden">
       <div className="bg-grid pointer-events-none fixed inset-0 -z-10" />
+      <FlightBackground />
 
       {/* Desktop sidebar */}
       <aside className="hidden h-dvh w-64 shrink-0 flex-col border-r border-border bg-surface/60 p-4 backdrop-blur lg:flex">

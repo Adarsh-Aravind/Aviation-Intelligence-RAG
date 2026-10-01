@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from psycopg_pool import PoolTimeout
 from slowapi.errors import RateLimitExceeded
 
-from app.api import chat, documents, health
+from app.api import chat, documents, flights, health
 from app.config import Settings, get_settings
 from app.container import Container
 from app.logging_config import RequestContextMiddleware, configure_logging
@@ -32,6 +32,7 @@ def build_container(settings: Settings) -> Container:
     from app.db.pool import create_pool
     from app.db.repository import PgDocumentStore
     from app.services.embeddings import FastEmbedEmbedder
+    from app.services.flights import FlightFeed
     from app.services.ingestion import IngestionWorker
     from app.services.llm import GroqLLM
     from app.services.rag import RagService
@@ -81,7 +82,8 @@ def build_container(settings: Settings) -> Container:
             min_relevance=settings.min_relevance,
         )
         rag = RagService(retriever, llm)
-    return Container(settings, store, storage, embedder, worker, rag)
+    feed = FlightFeed(settings) if settings.flights_enabled else None
+    return Container(settings, store, storage, embedder, worker, rag, feed)
 
 
 def _retry_until_done(name: str, fn, stop: threading.Event, max_delay: float = 60.0) -> None:
@@ -162,6 +164,8 @@ def _startup(container: Container) -> threading.Event:
     threading.Thread(
         target=_maintenance_loop, args=(container, stop), name="maintenance", daemon=True
     ).start()
+    if container.flights is not None:
+        threading.Thread(target=container.flights.run, args=(stop,), name="flight-feed", daemon=True).start()
     return stop
 
 
@@ -234,6 +238,7 @@ def create_app(container: Container | None = None) -> FastAPI:
     app.include_router(health.router, prefix="/api")
     app.include_router(documents.router, prefix="/api")
     app.include_router(chat.router, prefix="/api")
+    app.include_router(flights.router, prefix="/api")
     return app
 
 

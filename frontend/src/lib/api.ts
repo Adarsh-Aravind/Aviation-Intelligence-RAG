@@ -5,6 +5,7 @@ import type {
   DocumentList,
   DocumentOut,
   FileUrlResponse,
+  FlightsResponse,
   HealthResponse,
   SessionResponse,
   StatsResponse,
@@ -66,6 +67,7 @@ export const api = {
     request<DocumentOut>(p(`documents/${id}/complete`), { method: "POST" }),
   reprocess: (id: string) => request<DocumentOut>(p(`documents/${id}/reprocess`), { method: "POST" }),
   deleteDocument: (id: string) => request<void>(p(`documents/${id}`), { method: "DELETE" }),
+  flights: () => request<FlightsResponse>(p("flights")),
   ask: (question: string) =>
     request<ChatResponse>(p("chat"), { method: "POST", body: JSON.stringify({ question }) }),
 

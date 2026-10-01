@@ -90,6 +90,27 @@ export interface StatsResponse {
   llm_model: string;
 }
 
+export interface Airport {
+  iata: string;
+  lat: number;
+  lon: number;
+}
+
+export interface Flight {
+  callsign: string;
+  lat: number;
+  lon: number;
+  track: number; // degrees clockwise from north
+  velocity: number; // m/s
+  origin: Airport;
+  destination: Airport;
+}
+
+export interface FlightsResponse {
+  updated_at: string | null;
+  flights: Flight[];
+}
+
 export interface SessionResponse {
   admin: boolean;
 }

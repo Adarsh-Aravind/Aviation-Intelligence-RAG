@@ -17,6 +17,7 @@ const UUID = "[0-9a-fA-F-]{36}";
 const RULES: Rule[] = [
   { method: "GET", pattern: /^health$/ },
   { method: "GET", pattern: /^stats$/ },
+  { method: "GET", pattern: /^flights$/ },
   { method: "GET", pattern: /^documents$/ },
   { method: "GET", pattern: new RegExp(`^documents/${UUID}$`) },
   { method: "GET", pattern: new RegExp(`^documents/${UUID}/file-url$`) },

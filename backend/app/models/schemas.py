@@ -112,3 +112,24 @@ class StatsResponse(BaseModel):
     pages_total: int
     embedding_model: str
     llm_model: str
+
+
+class Airport(BaseModel):
+    iata: str
+    lat: float
+    lon: float
+
+
+class FlightPoint(BaseModel):
+    callsign: str
+    lat: float
+    lon: float
+    track: float  # degrees clockwise from north
+    velocity: float  # m/s
+    origin: Airport
+    destination: Airport
+
+
+class FlightsResponse(BaseModel):
+    updated_at: datetime | None = None
+    flights: list[FlightPoint]
