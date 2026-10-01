@@ -174,48 +174,51 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 ### Backend on your server (PM2 + Cloudflare Tunnel) — recommended
 
-This needs no Docker: a Python virtualenv, **PM2** to keep uvicorn running, and **cloudflared** as a system service. uvicorn only listens on `127.0.0.1`, so nothing is exposed except through the tunnel.
+This needs no Docker and no `sudo`. Everything lives in one folder: a Python virtualenv, the API under **PM2**, and this project's **own Cloudflare Tunnel**, also run by PM2. It's separate from any tunnel or service already on the machine, so other apps are never touched. uvicorn listens on `127.0.0.1:8100` only, so the tunnel is the only way in.
 
-1. **Swap** (recommended on 4 GB):
+1. **Code + Python 3.12** (`python3-venv` must be installed):
    ```bash
-   sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
-   echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-   ```
-2. **Python 3.12 + code:**
-   ```bash
-   sudo apt install -y python3 python3-venv git
-   git clone <your-repo> ~/aviation-rag && cd ~/aviation-rag/backend
+   git clone https://github.com/Adarsh-Aravind/Aviation-Intelligence-RAG.git ~/aviation-intelligence-rag
+   cd ~/aviation-intelligence-rag/backend
    python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-   cp .env.example .env && nano .env   # ENVIRONMENT=production + all keys
-   .venv/bin/python -m app.db.migrate  # create tables (safe to re-run)
+   cp .env.example .env && chmod 600 .env && nano .env   # ENVIRONMENT=production + all keys
+   .venv/bin/python -m app.db.migrate                     # create tables (safe to re-run)
    ```
-3. **Start with PM2:**
+2. **Pre-download the embedding model** (~65 MB, once), so later boots never need the internet for it:
    ```bash
-   mkdir -p logs
-   pm2 start ecosystem.config.js
-   pm2 save                     # remember it across reboots (run `pm2 startup` once if you haven't)
-   pm2 logs aviation-rag-api    # the first start downloads the embedding model (~130 MB, once)
-   curl http://127.0.0.1:8000/api/health
+   .venv/bin/python -c "from app.config import Settings as S; from fastembed import TextEmbedding as T; s=S(); T(s.embedding_model, cache_dir=s.embedding_cache_dir)"
    ```
-   `ecosystem.config.js` runs **one** uvicorn worker, so there's one model copy in RAM. It auto-restarts on crash and restarts if memory goes above 1.2 GB (normal usage is ~0.4 GB).
-4. **Cloudflare Tunnel:**
-   1. In Cloudflare Zero Trust, go to **Networks → Tunnels → Create tunnel** (type *Cloudflared*).
-   2. Pick your server's OS and run the install command it shows, e.g. `sudo cloudflared service install <TOKEN>`. That sets cloudflared up as a systemd service that survives reboots.
-   3. Under **Public Hostname**, add `api.<your-domain>` → Service **HTTP** → `localhost:8000`.
+3. **Create the project's own tunnel.** This needs a one-time `cloudflared tunnel login` for your domain if `~/.cloudflared/cert.pem` doesn't exist yet.
+   ```bash
+   cd ~/aviation-intelligence-rag/deploy/cloudflared
+   cloudflared tunnel create --credentials-file "$PWD/credentials.json" aviation-rag
+   cp config.example.yml config.yml && nano config.yml   # tunnel UUID, credentials path, rag-api.<your-domain>
+   # Pass --config explicitly: otherwise cloudflared may use ~/.cloudflared/config.yml and attach
+   # the DNS record to a *different* tunnel already on the machine.
+   cloudflared tunnel --config "$PWD/config.yml" route dns --overwrite-dns <TUNNEL-UUID> rag-api.<your-domain>
+   cloudflared tunnel --config "$PWD/config.yml" ingress validate
+   ```
+4. **Start both processes with PM2 and enable autostart:**
+   ```bash
+   cd ~/aviation-intelligence-rag/backend && mkdir -p logs
+   pm2 start ecosystem.config.js   # starts ONLY aviation-rag-api + aviation-rag-tunnel
+   pm2 save                        # restore them after reboots/power cuts (needs `pm2 startup` done once)
+   curl http://127.0.0.1:8100/api/health
+   ```
+   `ecosystem.config.js` runs **one** uvicorn worker, so there's one model copy in RAM, about 0.33 GB in production. Both apps auto-restart with exponential backoff, and the API restarts if memory exceeds 1.2 GB. The port can be changed with `RAG_PORT`; keep `config.yml` in sync.
 5. **Verify from anywhere:**
    ```bash
-   curl https://api.<your-domain>/api/health
+   curl https://rag-api.<your-domain>/api/health
    ```
-   Other endpoints return 401 without the API key, which is expected.
+   Other endpoints return 401 without the API key, and `/api/docs` is disabled in production. Both are expected.
 6. **Updating:**
    ```bash
-   cd ~/aviation-rag && git pull
-   cd backend && .venv/bin/pip install -r requirements.txt
-   .venv/bin/python -m app.db.migrate
+   cd ~/aviation-intelligence-rag && git pull
+   cd backend && .venv/bin/pip install -r requirements.txt && .venv/bin/python -m app.db.migrate
    pm2 restart aviation-rag-api
    ```
 
-**Useful PM2 commands:** `pm2 status`, `pm2 logs aviation-rag-api`, `pm2 monit` (live CPU and RAM), `pm2 restart aviation-rag-api`.
+**Useful PM2 commands:** `pm2 status`, `pm2 logs aviation-rag-api`, `pm2 logs aviation-rag-tunnel`, `pm2 monit` (live CPU and RAM). Always target the apps **by name**; avoid `pm2 restart all` on a shared machine.
 
 ### Running on a home server (power cuts and Wi-Fi outages)
 
@@ -223,7 +226,7 @@ The backend is built to run on a home PC that can lose power or internet without
 
 | Event | What happens |
 |---|---|
-| **Power cut / reboot** | PM2 starts the API on boot, and cloudflared (a systemd service) reconnects the tunnel. At startup the API retries the network with backoff until Wi-Fi is up, loads the embedding model from its local cache (no internet needed), and **re-queues any document that was mid-processing**. Re-processing replaces partial chunks, so nothing is duplicated or corrupted. |
+| **Power cut / reboot** | PM2 starts the API and its tunnel on boot. At startup the API retries the network with backoff until Wi-Fi is up, loads the embedding model from its local cache (no internet needed), and **re-queues any document that was mid-processing**. Re-processing replaces partial chunks, so nothing is duplicated or corrupted. |
 | **Internet outage while running** | The DB pool keeps reconnecting (a watchdog pings every 60 s). Requests during the outage get a clean **503 "temporarily unreachable"** instead of hanging. A document being processed stays **queued** ("Waiting for network") and retries with backoff (30 s → 10 min) instead of failing. |
 | **Visitors during an outage** | The Vercel frontend stays up. Cloudflare's error pages are turned into a friendly **"AI server is temporarily offline"** banner, which disappears by itself when the server returns. |
 | **App crash** | PM2 restarts it with exponential backoff and no restart cap. It also restarts if memory ever exceeds 1.2 GB. |
@@ -233,19 +236,19 @@ Data safety: the database and the PDFs live in Supabase, not on the home PC, so 
 
 **One-time checks on the server** (these are read-only and don't touch other PM2 apps):
 ```bash
-systemctl is-enabled pm2-$USER   # "enabled" = PM2 resurrects saved apps on boot
-systemctl is-enabled cloudflared # "enabled" = tunnel reconnects on boot
+systemctl is-enabled pm2-$USER   # "enabled" = PM2 resurrects saved apps (API + tunnel) on boot
+pm2 status                       # aviation-rag-api and aviation-rag-tunnel should be "online"
 ```
 Also recommended:
 - Enable **"Restore on AC power loss → Power On"** in the PC's BIOS, so it boots by itself after a power cut.
 - Consider a small UPS for the PC and router.
-- After adding the app, run `pm2 save` so the full app list (your existing apps plus `aviation-rag-api`) is restored on boot.
+- After adding the apps, run `pm2 save` so the full app list is restored on boot.
 
 > Supabase free projects pause after about 7 days with no activity. If the home server is offline that long, un-pause the project in the Supabase dashboard.
 
 ### Alternative: Docker
 If you prefer containers, `backend/Dockerfile` and `backend/docker-compose.yml` run the API plus `cloudflared` together. The model is baked into the image, and the API is capped at 1.5 GB RAM with no host ports published.
-1. Set the tunnel's public hostname service to `http://api:8000`.
+1. Use a token-based tunnel and set its public hostname service to `http://api:8000` (the container's internal port).
 2. Put the token in `.env` as `CLOUDFLARE_TUNNEL_TOKEN`.
 3. Run:
    ```bash
@@ -253,15 +256,15 @@ If you prefer containers, `backend/Dockerfile` and `backend/docker-compose.yml` 
    docker compose up -d --build
    ```
 
-**Optional hardening (either path):** add a Cloudflare WAF rate-limit rule on `api.<your-domain>`, or put it behind Cloudflare Access with a service token. The backend already requires `X-API-Key`.
+**Optional hardening (either path):** add a Cloudflare WAF rate-limit rule on `rag-api.<your-domain>`, or put it behind Cloudflare Access with a service token. The backend already requires `X-API-Key`.
 
 ### Frontend on Vercel
 1. Import the repo into Vercel and set **Root Directory** to `frontend` (framework: Next.js).
-2. Add these environment variables for Production and Preview. They're all server-only; none use the `NEXT_PUBLIC_` prefix.
+2. Add these environment variables for Production and Preview. They're all server-only; none use the `NEXT_PUBLIC_` prefix. Tip: Vercel's environment variables page lets you paste a whole `.env` file at once.
 
    | Variable | Value |
    |---|---|
-   | `BACKEND_URL` | `https://api.<your-domain>` |
+   | `BACKEND_URL` | `https://rag-api.<your-domain>` |
    | `BACKEND_API_KEY` | same as backend `.env` |
    | `BACKEND_ADMIN_KEY` | same as backend `.env` |
    | `ADMIN_PASSWORD` | a strong password for uploads and deletes |
