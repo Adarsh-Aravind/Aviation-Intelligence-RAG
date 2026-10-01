@@ -311,7 +311,13 @@ If you prefer containers, `backend/Dockerfile` and `backend/docker-compose.yml` 
 | Document fails with "scanned PDF" | The PDF has no text layer. OCR is intentionally not included, to fit in 4 GB. |
 | Everything answers "not enough information" | Lower `MIN_RELEVANCE`, e.g. to 0.40, and make sure documents are `ready`. |
 
+## Known limitations
+- **Tables lose their row and column structure.** Plain PDF text extraction emits many tables column by column. In the FAA handbook's VFR-minimums table (Figure 15-8), for example, the row labels "Class A … Class G" come out after all the values. Retrieval finds the table, but the text no longer says which values belong to which class, so the model correctly answers "not enough information" rather than guessing. The fix is layout-aware table extraction (rebuilding rows from character positions), which is on the roadmap.
+- **No OCR.** Scanned PDFs without a text layer are rejected, to stay within 4 GB of RAM.
+- **Free-tier LLM throughput.** Groq's free tier allows about 8K tokens per minute per model. Bursts automatically fall back to a second model, and if every model is busy, visitors are asked to retry in a minute.
+
 ## Roadmap
+- Layout-aware table extraction (rebuild table rows from PDFium character positions).
 - Streaming answers (SSE).
 - A lightweight cross-encoder reranker.
 - An evaluation set (question → expected document/page) with hit-rate and faithfulness metrics.
